@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D球形相册</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/postprocessing/UnrealBloomPass.js"></script>
+   
+    <script>
+        // 初始化场景、相机和渲染器
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // 设置相机位置
+        camera.position.z = 5;
+        
+        // 添加场景背景
+        scene.background = new THREE.Color(0x111122);
+        scene.fog = new THREE.Fog(0x111122, 10, 30);
+        
+        // 创建球体
+        const sphereGeometry = new THREE.SphereGeometry(2, 32, 32);
+        
+        // 图片路径数组
+        const imagePaths = [];
+        for (let i = 1; i <= 25; i++) {
+            imagePaths.push(`images/${i}.jpg`);
+        }
+
+        // 创建材质组
+        const materials = [];
+
+        // 为每个图片创建材质
+        for (let i = 0; i < 25; i++) {
+            const texture = new THREE.TextureLoader().load(imagePaths[i]);
+            // 添加加载事件以确保图片正确加载
+            texture.onload = function() {
+                renderer.render(scene, camera);
+            };
+            const material = new THREE.MeshPhongMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+                shininess: 50,
+                specular: 0x333333,
+                bumpScale: 0.05
+            });
+            materials.push(material);
+        }
+
+        // 创建一个足球状的结构
+        const sphereGroup = new THREE.Group();
+        
+        // 使用优化的斐波那契球面分布算法均匀分布点
+        const positions = [];
+        const numPoints = 25;
+        
+        // 使用更精确的斐波那契分布
+        for (let i = 0; i < numPoints; i++) {
+            // 黄金角度约为137.5度
+            const phi = Math.acos(1 - 2 * (i + 0.5) / numPoints);
+            const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+            
+            positions.push({ phi: phi, theta: theta });
+        }
+        
+        // 创建面片
+        for (let i = 0; i < 25; i++) {
+            // 创建一个多边形面片，交替使用五边形和六边形
+            const sides = (i % 2 === 0) ? 5 : 6;
+            
+            // 根据位置动态调整面片大小，球体两极区域略小，赤道区域略大
+            const sizeAdjust = Math.sin(positions[i].phi);
+            const size = 0.35 + sizeAdjust * 0.05;
+            
+            const planeGeometry = new THREE.CircleGeometry(size, sides);
+            const plane = new THREE.Mesh(planeGeometry, materials[i]);
+            
+            // 设置面片位置
+            const pos = positions[i];
+            const radius = 2; // 定义半径变量
+            const x = radius * Math.sin(pos.phi) * Math.cos(pos.theta);
+            const y = radius * Math.cos(pos.phi);
+            const z = radius * Math.sin(pos.phi) * Math.sin(pos.theta);
+            
+            plane.position.set(x, y, z);
+            
+            // 让面片朝向球心的外侧
+            plane.lookAt(0, 0, 0);
+            
+            // 减少随机旋转，使图片排列更整齐
+            plane.rotateZ(Math.PI / 6 * (i % 6) / 6);
+            
+            // 设置阴影
+            plane.castShadow = true;
+            plane.receiveShadow = true;
+            
+            // 添加到组中
+            sphereGroup.add(plane);
+        }
+        
+        // 移除黑色球体背景
+        // 原代码：
+        // const blackSphereGeometry = new THREE.SphereGeometry(1.95, 32, 32);
+        // const blackMaterial = new THREE.MeshPhongMaterial({ 
+        //     color: 0x000000,
+        //     shininess: 10,
+        //     specular: 0x222222
+        // });
+        // const blackSphere = new THREE.Mesh(blackSphereGeometry, blackMaterial);
+        // blackSphere.receiveShadow = true;
+        // sphereGroup.add(blackSphere);
+        
+        scene.add(sphereGroup);
+
+        // 添加环境光
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+
+        // 添加方向光
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        scene.add(directionalLight);
+        
+        // 添加点光源
+        const pointLight = new THREE.PointLight(0x6699ff, 0.8, 10);
+        pointLight.position.set(-5, 2, 3);
+        scene.add(pointLight);
+        
+        // 添加聚光灯
+        const spotLight = new THREE.SpotLight(0xffffff, 0.5);
+        spotLight.position.set(0, 5, 5);
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.2;
+        spotLight.castShadow = true;
+        scene.add(spotLight);
+        
+        // 添加光晕效果
+        const bloomPass = new THREE.UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.5,    // 强度
+            0.4,    // 半径
+            0.85    // 阈值
+        );
+        
+        // 自动旋转球体组
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            sphereGroup.rotation.y += 0.005;
+            
+            // 添加轻微的上下浮动效果
+            sphereGroup.position.y = Math.sin(Date.now() * 0.001) * 0.1;
+            
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // 响应窗口大小变化
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // 在小屏幕设备上调整相机位置
+            if (window.innerWidth < 768) {
+                camera.position.z = 7; // 在移动设备上拉远一点，以便看到整个球体
+            } else {
+                camera.position.z = 5; // 桌面设备保持原来的距离
+            }
+        });
+
+        // 检测是否为移动设备
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // 如果是移动设备，初始化时调整相机位置
+        if (isMobile) {
+            camera.position.z = 7;
+        }
+
+        // 添加鼠标和触摸交互
+        let isDragging = false;
+        let previousMousePosition = {
+            x: 0,
+            y: 0
+        };
+
+        // 鼠标事件
+        document.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = {
+                x: e.clientX,
+                y: e.clientY
+            };
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaMove = {
+                    x: e.clientX - previousMousePosition.x,
+                    y: e.clientY - previousMousePosition.y
+                };
+
+                sphereGroup.rotation.y += deltaMove.x * 0.01;
+                sphereGroup.rotation.x += deltaMove.y * 0.01;
+                
+                previousMousePosition = {
+                    x: e.clientX,
+                    y: e.clientY
+                };
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+        
+        // 触摸事件
+        document.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            previousMousePosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+            e.preventDefault(); // 防止滚动
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                const deltaMove = {
+                    x: e.touches[0].clientX - previousMousePosition.x,
+                    y: e.touches[0].clientY - previousMousePosition.y
+                };
+
+                sphereGroup.rotation.y += deltaMove.x * 0.01;
+                sphereGroup.rotation.x += deltaMove.y * 0.01;
+                
+                previousMousePosition = {
+                    x: e.touches[0].clientX,
+                    y: e.touches[0].clientY
+                };
+            }
+            e.preventDefault(); // 防止滚动
+        }, { passive: false });
+
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+    </script>
+</body>
+</html>
